@@ -44,9 +44,11 @@ end
 
 function check_update()
     lua_thread.create(function()
-        local requests = require 'requests' -- Используем библиотеку запросов вместо системной функции
+        local requests = require 'requests'
+        local encoding = require 'encoding'
+        encoding.default = 'CP1251'
+        local u8 = encoding.UTF8
         
-        -- Сначала проверим версию (тут можно оставить downloadUrlToFile, она обычно не глючит на мелких файлах)
         local temp_v = getWorkingDirectory() .. "\\config\\v.txt"
         downloadUrlToFile(version_url, temp_v, function(id, status)
             if status == 6 and doesFileExist(temp_v) then
@@ -58,24 +60,26 @@ function check_update()
                 if tonumber(online_v) and tonumber(online_v) > current_vers then
                     sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдено обновление {00FF00}" .. online_v .. "{FFFFFF}. Скачиваю...", -1)
                     
-                    -- ВАЖНО: Качаем код прямо в переменную через requests
                     local response = requests.get(script_url)
                     if response.status_code == 200 then
-                        local content = response.text
+                        -- КОДИРОВКА: Переводим из UTF-8 (GitHub) в CP1251 (SAMP)
+                        local content = encoding.UTF8:decode(response.text)
                         
-                        -- Теперь записываем этот текст в файл скрипта
                         local currentPath = thisScript().path
                         local file = io.open(currentPath, "wb")
                         if file then
                             file:write(content)
                             file:close()
-                            sampAddChatMessage("{00FF00}[AH] {FFFFFF}Обновлено! Перезагружаюсь...", -1)
-                            thisScript():reload()
+                            
+                            -- ЗАДЕРЖКА: Даем системе 500мс "отпустить" файл перед перезагрузкой
+                            sampAddChatMessage("{00FF00}[AH] {FFFFFF}Обновлено! Перезагрузка через секунду...", -1)
+                            lua_thread.create(function()
+                                wait(1000)
+                                thisScript():reload()
+                            end)
                         else
-                            sampAddChatMessage("{FF0000}[AH] {FFFFFF}Ошибка записи. Попробуй запуск от Админа.", -1)
+                            sampAddChatMessage("{FF0000}[AH] {FFFFFF}Ошибка записи файла!", -1)
                         end
-                    else
-                        sampAddChatMessage("{FF0000}[AH] {FFFFFF}Ошибка скачивания с GitHub (Код: " .. response.status_code .. ")", -1)
                     end
                 end
             end
