@@ -9,8 +9,8 @@ encoding.default = 'CP1251'
 
 -- ================= [ НАСТРОЙКИ ОБНОВЛЕНИЯ ] =================
 local current_vers = 0.3
-local version_url = "https://raw.githubusercontent.com/newwerhasegawa/AcademyHelper/main/version.txt"
-local script_url = "https://raw.githubusercontent.com/newwerhasegawa/AcademyHelper/main/AcademyHelper.lua"
+local version_url = "https://raw.githubusercontent.com/newwerhasegawa/AcademyHelper/refs/heads/main/version.txt"
+local script_url = "https://raw.githubusercontent.com/newwerhasegawa/AcademyHelper/refs/heads/main/AcademyHelper.lua"
 
 -- ================= [ ТВОИ НАСТРОЙКИ ] =================
 local GAS_URL = "https://script.google.com/macros/s/AKfycbyPFOentE3gta4L94HL9cKm1KQ__LLZLBKpz2WTKrK1ui74FT4iyKQYhOxSziZRPD0vEw/exec"
