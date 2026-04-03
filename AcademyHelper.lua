@@ -43,51 +43,43 @@ function isMarked(val)
 end
 
 function check_update()
-    local configDir = getWorkingDirectory() .. "\\config"
-    if not doesDirectoryExist(configDir) then createDirectory(configDir) end
-    
-    local temp_v = configDir .. "\\v.txt"
-    -- Меняем расширение на .tmp, чтобы MoonLoader и Windows не «занимали» его как скрипт
-    local update_temp_file = configDir .. "\\update_data.tmp" 
-
-    downloadUrlToFile(version_url, temp_v, function(id, status)
-        if status == 6 and doesFileExist(temp_v) then
-            local f = io.open(temp_v, "r")
-            if f then
+    lua_thread.create(function()
+        local requests = require 'requests' -- Используем библиотеку запросов вместо системной функции
+        
+        -- Сначала проверим версию (тут можно оставить downloadUrlToFile, она обычно не глючит на мелких файлах)
+        local temp_v = getWorkingDirectory() .. "\\config\\v.txt"
+        downloadUrlToFile(version_url, temp_v, function(id, status)
+            if status == 6 and doesFileExist(temp_v) then
+                local f = io.open(temp_v, "r")
                 local online_v = f:read("*all"):gsub("%s+", "")
                 f:close()
                 os.remove(temp_v)
-                
+
                 if tonumber(online_v) and tonumber(online_v) > current_vers then
-                    sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдено обновление! Загружаем версию {00FF00}" .. online_v, -1)
+                    sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдено обновление {00FF00}" .. online_v .. "{FFFFFF}. Скачиваю...", -1)
                     
-                    -- Качаем в .tmp файл. Это КРИТИЧЕСКИ важно для обхода ошибки busy
-                    downloadUrlToFile(script_url, update_temp_file, function(id2, status2)
-                        if status2 == 6 and doesFileExist(update_temp_file) then
-                            
-                            local newFile = io.open(update_temp_file, "rb") -- Читаем как бинарный файл
-                            if newFile then
-                                local content = newFile:read("*all")
-                                newFile:close()
-                                
-                                -- Записываем контент в текущий рабочий скрипт
-                                local currentScriptPath = thisScript().path
-                                local oldFile = io.open(currentScriptPath, "wb") -- Пишем как бинарный
-                                if oldFile then
-                                    oldFile:write(content)
-                                    oldFile:close()
-                                    os.remove(update_temp_file)
-                                    sampAddChatMessage("{00FF00}[AH] {FFFFFF}Обновление успешно применено! Перезагрузка...", -1)
-                                    thisScript():reload()
-                                else
-                                    sampAddChatMessage("{FF0000}[AH] {FFFFFF}Ошибка доступа к файлу скрипта!", -1)
-                                end
-                            end
+                    -- ВАЖНО: Качаем код прямо в переменную через requests
+                    local response = requests.get(script_url)
+                    if response.status_code == 200 then
+                        local content = response.text
+                        
+                        -- Теперь записываем этот текст в файл скрипта
+                        local currentPath = thisScript().path
+                        local file = io.open(currentPath, "wb")
+                        if file then
+                            file:write(content)
+                            file:close()
+                            sampAddChatMessage("{00FF00}[AH] {FFFFFF}Обновлено! Перезагружаюсь...", -1)
+                            thisScript():reload()
+                        else
+                            sampAddChatMessage("{FF0000}[AH] {FFFFFF}Ошибка записи. Попробуй запуск от Админа.", -1)
                         end
-                    end)
+                    else
+                        sampAddChatMessage("{FF0000}[AH] {FFFFFF}Ошибка скачивания с GitHub (Код: " .. response.status_code .. ")", -1)
+                    end
                 end
             end
-        end
+        end)
     end)
 end
 
