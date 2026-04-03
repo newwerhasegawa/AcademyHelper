@@ -1,5 +1,5 @@
 script_name("AcademyHelper")
-script_version("0.3")
+script_version("0.4")
 
 require 'moonloader'
 local vkeys = require 'lib.vkeys'
@@ -8,7 +8,7 @@ local encoding = require 'encoding'
 encoding.default = 'CP1251'
 
 -- ================= [ НАСТРОЙКИ ОБНОВЛЕНИЯ ] =================
-local current_vers = 0.3
+local current_vers = 0.4
 local version_url = "https://raw.githubusercontent.com/newwerhasegawa/AcademyHelper/refs/heads/main/version.txt"
 local script_url = "https://raw.githubusercontent.com/newwerhasegawa/AcademyHelper/refs/heads/main/AcademyHelper.lua"
 
@@ -147,7 +147,7 @@ function main()
     while not isSampAvailable() do wait(100) end
     
     -- ПРИВЕТСТВЕННОЕ СООБЩЕНИЕ
-    sampAddChatMessage("{0633E5}[AH] {FF0000}AcademyHelper v.0.3 {FFFFFF}загружен. Автор {0633E5}Newwer Hasegawa.", -1)
+    sampAddChatMessage("{0633E5}[AH] {FF0000}AcademyHelper v.0.4 {FFFFFF}загружен. Автор {0633E5}Newwer Hasegawa.", -1)
     sampAddChatMessage("{0633E5}[AH] {FFFFFF}Для работы напишите в чат {FF0000}/ah", -1)
 
     check_update()
