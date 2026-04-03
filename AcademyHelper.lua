@@ -47,7 +47,8 @@ function check_update()
     if not doesDirectoryExist(configDir) then createDirectory(configDir) end
     
     local temp_v = configDir .. "\\v.txt"
-    local update_temp_file = configDir .. "\\update_temp.lua" -- Временный файл для загрузки
+    -- Меняем расширение на .tmp, чтобы MoonLoader и Windows не «занимали» его как скрипт
+    local update_temp_file = configDir .. "\\update_data.tmp" 
 
     downloadUrlToFile(version_url, temp_v, function(id, status)
         if status == 6 and doesFileExist(temp_v) then
@@ -60,26 +61,27 @@ function check_update()
                 if tonumber(online_v) and tonumber(online_v) > current_vers then
                     sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдено обновление! Загружаем версию {00FF00}" .. online_v, -1)
                     
-                    -- Качаем НЕ в сам скрипт, а во временный файл, чтобы не было ошибки "busy"
+                    -- Качаем в .tmp файл. Это КРИТИЧЕСКИ важно для обхода ошибки busy
                     downloadUrlToFile(script_url, update_temp_file, function(id2, status2)
                         if status2 == 6 and doesFileExist(update_temp_file) then
-                            sampAddChatMessage("{00FF00}[AH] {FFFFFF}Файл загружен! Применяем обновление...", -1)
                             
-                            -- Магия замены:
-                            local currentScriptPath = thisScript().path
-                            local newFile = io.open(update_temp_file, "r")
-                            local content = newFile:read("*all")
-                            newFile:close()
-                            
-                            local oldFile = io.open(currentScriptPath, "w")
-                            if oldFile then
-                                oldFile:write(content)
-                                oldFile:close()
-                                os.remove(update_temp_file)
-                                sampAddChatMessage("{00FF00}[AH] {FFFFFF}Готово! Перезагрузка...", -1)
-                                thisScript():reload()
-                            else
-                                sampAddChatMessage("{FF0000}[AH] {FFFFFF}Ошибка записи! Запустите игру от имени администратора.", -1)
+                            local newFile = io.open(update_temp_file, "rb") -- Читаем как бинарный файл
+                            if newFile then
+                                local content = newFile:read("*all")
+                                newFile:close()
+                                
+                                -- Записываем контент в текущий рабочий скрипт
+                                local currentScriptPath = thisScript().path
+                                local oldFile = io.open(currentScriptPath, "wb") -- Пишем как бинарный
+                                if oldFile then
+                                    oldFile:write(content)
+                                    oldFile:close()
+                                    os.remove(update_temp_file)
+                                    sampAddChatMessage("{00FF00}[AH] {FFFFFF}Обновление успешно применено! Перезагрузка...", -1)
+                                    thisScript():reload()
+                                else
+                                    sampAddChatMessage("{FF0000}[AH] {FFFFFF}Ошибка доступа к файлу скрипта!", -1)
+                                end
                             end
                         end
                     end)
