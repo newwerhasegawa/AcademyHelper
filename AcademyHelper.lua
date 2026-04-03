@@ -43,7 +43,12 @@ function isMarked(val)
 end
 
 function check_update()
-    local temp_v = getWorkingDirectory() .. "\\config\\v.txt"
+    local configDir = getWorkingDirectory() .. "\\config"
+    if not doesDirectoryExist(configDir) then createDirectory(configDir) end
+    
+    local temp_v = configDir .. "\\v.txt"
+    local update_temp_file = configDir .. "\\update_temp.lua" -- Временный файл для загрузки
+
     downloadUrlToFile(version_url, temp_v, function(id, status)
         if status == 6 and doesFileExist(temp_v) then
             local f = io.open(temp_v, "r")
@@ -51,12 +56,31 @@ function check_update()
                 local online_v = f:read("*all"):gsub("%s+", "")
                 f:close()
                 os.remove(temp_v)
+                
                 if tonumber(online_v) and tonumber(online_v) > current_vers then
                     sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдено обновление! Загружаем версию {00FF00}" .. online_v, -1)
-                    downloadUrlToFile(script_url, thisScript().path, function(id2, status2)
-                        if status2 == 6 then
-                            sampAddChatMessage("{00FF00}[AH] {FFFFFF}Скрипт успешно обновлен! Перезагрузка...", -1)
-                            thisScript():reload()
+                    
+                    -- Качаем НЕ в сам скрипт, а во временный файл, чтобы не было ошибки "busy"
+                    downloadUrlToFile(script_url, update_temp_file, function(id2, status2)
+                        if status2 == 6 and doesFileExist(update_temp_file) then
+                            sampAddChatMessage("{00FF00}[AH] {FFFFFF}Файл загружен! Применяем обновление...", -1)
+                            
+                            -- Магия замены:
+                            local currentScriptPath = thisScript().path
+                            local newFile = io.open(update_temp_file, "r")
+                            local content = newFile:read("*all")
+                            newFile:close()
+                            
+                            local oldFile = io.open(currentScriptPath, "w")
+                            if oldFile then
+                                oldFile:write(content)
+                                oldFile:close()
+                                os.remove(update_temp_file)
+                                sampAddChatMessage("{00FF00}[AH] {FFFFFF}Готово! Перезагрузка...", -1)
+                                thisScript():reload()
+                            else
+                                sampAddChatMessage("{FF0000}[AH] {FFFFFF}Ошибка записи! Запустите игру от имени администратора.", -1)
+                            end
                         end
                     end)
                 end
