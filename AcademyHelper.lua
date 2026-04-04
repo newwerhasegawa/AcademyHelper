@@ -1,5 +1,5 @@
-script_name("AcademyHelper")
-script_version("0.4")
+script_name("AcademyHelper_Stable")
+script_version("0.5")
 
 require 'moonloader'
 local vkeys = require 'lib.vkeys'
@@ -8,9 +8,9 @@ local encoding = require 'encoding'
 encoding.default = 'CP1251'
 
 -- ================= [ НАСТРОЙКИ ОБНОВЛЕНИЯ ] =================
-local current_vers = 0.4
-local version_url = "https://raw.githubusercontent.com/newwerhasegawa/AcademyHelper/refs/heads/main/version.txt"
-local script_url = "https://raw.githubusercontent.com/newwerhasegawa/AcademyHelper/refs/heads/main/AcademyHelper.lua"
+local current_vers = 0.5
+local version_url = "https://raw.githubusercontent.com/newwerhasegawa/AcademyHelper/main/version.txt"
+local script_url = "https://raw.githubusercontent.com/newwerhasegawa/AcademyHelper/main/AcademyHelper.lua"
 
 -- ================= [ ТВОИ НАСТРОЙКИ ] =================
 local GAS_URL = "https://script.google.com/macros/s/AKfycbyPFOentE3gta4L94HL9cKm1KQ__LLZLBKpz2WTKrK1ui74FT4iyKQYhOxSziZRPD0vEw/exec"
@@ -44,11 +44,9 @@ end
 
 function check_update()
     lua_thread.create(function()
-        local requests = require 'requests'
-        local encoding = require 'encoding'
-        encoding.default = 'CP1251'
-        local u8 = encoding.UTF8
+        local requests = require 'requests' -- Используем библиотеку запросов вместо системной функции
         
+        -- Сначала проверим версию (тут можно оставить downloadUrlToFile, она обычно не глючит на мелких файлах)
         local temp_v = getWorkingDirectory() .. "\\config\\v.txt"
         downloadUrlToFile(version_url, temp_v, function(id, status)
             if status == 6 and doesFileExist(temp_v) then
@@ -60,26 +58,24 @@ function check_update()
                 if tonumber(online_v) and tonumber(online_v) > current_vers then
                     sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдено обновление {00FF00}" .. online_v .. "{FFFFFF}. Скачиваю...", -1)
                     
+                    -- ВАЖНО: Качаем код прямо в переменную через requests
                     local response = requests.get(script_url)
                     if response.status_code == 200 then
-                        -- КОДИРОВКА: Переводим из UTF-8 (GitHub) в CP1251 (SAMP)
-                        local content = encoding.UTF8:decode(response.text)
+                        local content = response.text
                         
+                        -- Теперь записываем этот текст в файл скрипта
                         local currentPath = thisScript().path
                         local file = io.open(currentPath, "wb")
                         if file then
                             file:write(content)
                             file:close()
-                            
-                            -- ЗАДЕРЖКА: Даем системе 500мс "отпустить" файл перед перезагрузкой
-                            sampAddChatMessage("{00FF00}[AH] {FFFFFF}Обновлено! Перезагрузка через секунду...", -1)
-                            lua_thread.create(function()
-                                wait(1000)
-                                thisScript():reload()
-                            end)
+                            sampAddChatMessage("{00FF00}[AH] {FFFFFF}Обновлено! Перезагружаюсь...", -1)
+                            thisScript():reload()
                         else
-                            sampAddChatMessage("{FF0000}[AH] {FFFFFF}Ошибка записи файла!", -1)
+                            sampAddChatMessage("{FF0000}[AH] {FFFFFF}Ошибка записи. Попробуй запуск от Админа.", -1)
                         end
+                    else
+                        sampAddChatMessage("{FF0000}[AH] {FFFFFF}Ошибка скачивания с GitHub (Код: " .. response.status_code .. ")", -1)
                     end
                 end
             end
@@ -147,7 +143,7 @@ function main()
     while not isSampAvailable() do wait(100) end
     
     -- ПРИВЕТСТВЕННОЕ СООБЩЕНИЕ
-    sampAddChatMessage("{0633E5}[AH] {FF0000}AcademyHelper v.0.4 {FFFFFF}загружен. Автор {0633E5}Newwer Hasegawa.", -1)
+    sampAddChatMessage("{0633E5}[AH] {FF0000}AcademyHelper v.0.5 {FFFFFF}загружен. Автор {0633E5}Newwer Hasegawa.", -1)
     sampAddChatMessage("{0633E5}[AH] {FFFFFF}Для работы напишите в чат {FF0000}/ah", -1)
 
     check_update()
