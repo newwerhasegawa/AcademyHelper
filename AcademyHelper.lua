@@ -1,5 +1,5 @@
 script_name("AcademyHelper_Stable")
-script_version("0.5")
+script_version("0.6")
 
 require 'moonloader'
 local vkeys = require 'lib.vkeys'
@@ -8,7 +8,7 @@ local encoding = require 'encoding'
 encoding.default = 'CP1251'
 
 -- ================= [ НАСТРОЙКИ ОБНОВЛЕНИЯ ] =================
-local current_vers = 0.5
+local current_vers = 0.6
 local version_url = "https://raw.githubusercontent.com/newwerhasegawa/AcademyHelper/main/version.txt"
 local script_url = "https://raw.githubusercontent.com/newwerhasegawa/AcademyHelper/main/AcademyHelper.lua"
 
@@ -44,42 +44,38 @@ end
 
 function check_update()
     lua_thread.create(function()
-        local requests = require 'requests' -- Используем библиотеку запросов вместо системной функции
+        -- Даем игре 5 секунд полностью прогрузиться, чтобы не было конфликта urlmon.dll
+        wait(5000) 
         
-        -- Сначала проверим версию (тут можно оставить downloadUrlToFile, она обычно не глючит на мелких файлах)
-        local temp_v = getWorkingDirectory() .. "\\config\\v.txt"
-        downloadUrlToFile(version_url, temp_v, function(id, status)
-            if status == 6 and doesFileExist(temp_v) then
-                local f = io.open(temp_v, "r")
-                local online_v = f:read("*all"):gsub("%s+", "")
-                f:close()
-                os.remove(temp_v)
-
-                if tonumber(online_v) and tonumber(online_v) > current_vers then
-                    sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдено обновление {00FF00}" .. online_v .. "{FFFFFF}. Скачиваю...", -1)
+        local requests = require 'requests'
+        local encoding = require 'encoding'
+        
+        -- Используем pcall, чтобы если запрос упадет, игра не крашнулась
+        local status, response = pcall(requests.get, version_url)
+        
+        if status and response and response.status_code == 200 then
+            local online_v = response.text:gsub("%s+", "")
+            
+            if tonumber(online_v) and tonumber(online_v) > current_vers then
+                sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдено обновление {00FF00}" .. online_v .. "{FFFFFF}. Загрузка...", -1)
+                
+                local s_status, s_response = pcall(requests.get, script_url)
+                if s_status and s_response and s_response.status_code == 200 then
+                    -- Конвертируем UTF-8 в CP1251 для исправления кракозябр
+                    local content = encoding.UTF8:decode(s_response.text)
                     
-                    -- ВАЖНО: Качаем код прямо в переменную через requests
-                    local response = requests.get(script_url)
-                    if response.status_code == 200 then
-                        local content = response.text
+                    local file = io.open(thisScript().path, "wb")
+                    if file then
+                        file:write(content)
+                        file:close()
                         
-                        -- Теперь записываем этот текст в файл скрипта
-                        local currentPath = thisScript().path
-                        local file = io.open(currentPath, "wb")
-                        if file then
-                            file:write(content)
-                            file:close()
-                            sampAddChatMessage("{00FF00}[AH] {FFFFFF}Обновлено! Перезагружаюсь...", -1)
-                            thisScript():reload()
-                        else
-                            sampAddChatMessage("{FF0000}[AH] {FFFFFF}Ошибка записи. Попробуй запуск от Админа.", -1)
-                        end
-                    else
-                        sampAddChatMessage("{FF0000}[AH] {FFFFFF}Ошибка скачивания с GitHub (Код: " .. response.status_code .. ")", -1)
+                        sampAddChatMessage("{00FF00}[AH] {FFFFFF}Обновлено! Скрипт перезагрузится через 3 секунды...", -1)
+                        wait(3000) -- Увеличиваем время, чтобы система "отпустила" файл
+                        thisScript():reload()
                     end
                 end
             end
-        end)
+        end
     end)
 end
 
@@ -143,7 +139,7 @@ function main()
     while not isSampAvailable() do wait(100) end
     
     -- ПРИВЕТСТВЕННОЕ СООБЩЕНИЕ
-    sampAddChatMessage("{0633E5}[AH] {FF0000}AcademyHelper v.0.5 {FFFFFF}загружен. Автор {0633E5}Newwer Hasegawa.", -1)
+    sampAddChatMessage("{0633E5}[AH] {FF0000}AcademyHelper v.0.6 {FFFFFF}загружен. Автор {0633E5}Newwer Hasegawa.", -1)
     sampAddChatMessage("{0633E5}[AH] {FFFFFF}Для работы напишите в чат {FF0000}/ah", -1)
 
     check_update()
