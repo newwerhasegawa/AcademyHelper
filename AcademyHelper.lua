@@ -1,5 +1,5 @@
 script_name("AcademyHelper_Stable")
-script_version("0.9.7")
+script_version("0.9.8")
 script_authors("Newer Hasegawa")
 
 local encoding = require 'encoding'
