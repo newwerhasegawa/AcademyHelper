@@ -108,6 +108,13 @@ function processQueue()
     requestTimestamp = os.clock()
     local nextReq = table.remove(requestQueue, 1)
     local prefix = nextReq.url:find("google") and "gas" or (nextReq.url:find("version") and "ver" or "lec")
+    
+    -- [ВАЖНО] Защита от краша urlmon.dll: проверяем наличие папки ПЕРЕД КАЖДЫМ скачиванием
+    if not doesDirectoryExist(ah_dir) then 
+        createDirectory(getWorkingDirectory() .. "\\config")
+        createDirectory(ah_dir) 
+    end
+
     local tempPath = string.format("%stmp_%s_%d.json", ah_dir, prefix, os.time())
     
     if doesFileExist(tempPath) then os.remove(tempPath) end
@@ -145,23 +152,35 @@ function checkScriptUpdate()
             updateTriggered = true
             sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдена новая версия {00FF00}v." .. cleanRemoteVer .. "{FFFFFF}, установка...", -1)
             
-            -- Используем ТВОЮ очередь вместо проблемного прямого вызова, 
-            -- чтобы код загрузился в оперативную память и не блокировал файлы.
-            queueHttpRequest(SCRIPT_URL .. "?t=" .. os.time(), function(scriptContent)
-                -- Проверка: точно ли скачался код скрипта (защита от ошибки 404)
-                if scriptContent and scriptContent:find("script_name") then
-                    -- Открываем текущий файл скрипта для перезаписи (в бинарном режиме 'wb', чтобы кодировка не сломалась)
-                    local f = io.open(thisScript().path, "wb")
+            -- Качаем скрипт напрямую, минуя JSON очередь.
+            local tempUpdatePath = getWorkingDirectory() .. "\\AH_update_temp.lua"
+            downloadUrlToFile(SCRIPT_URL .. "?t=" .. os.time(), tempUpdatePath, function(id, status)
+                if status == 6 then
+                    -- Проверяем, что скачался именно Lua код, а не ошибка провайдера/GitHub
+                    local f = io.open(tempUpdatePath, "r")
                     if f then
-                        f:write(scriptContent)
+                        local checkContent = f:read("*all")
                         f:close()
-                        sampAddChatMessage("{0633E5}[AH] {00FF00}Обновление завершено. Перезагрузка...", -1)
-                        thisScript():reload()
-                    else
-                        sampAddChatMessage("{0633E5}[AH] {FF0000}Ошибка: не удалось перезаписать файл скрипта.", -1)
+                        
+                        if checkContent:find("script_name") then
+                            -- Записываем проверенный код в оригинальный файл
+                            local mainF = io.open(thisScript().path, "wb")
+                            if mainF then
+                                mainF:write(checkContent)
+                                mainF:close()
+                                os.remove(tempUpdatePath)
+                                sampAddChatMessage("{0633E5}[AH] {00FF00}Обновление завершено. Перезагрузка...", -1)
+                                thisScript():reload()
+                            end
+                        else
+                            os.remove(tempUpdatePath)
+                            sampAddChatMessage("{0633E5}[AH] {FF0000}Ошибка: скачан поврежденный код.", -1)
+                            updateTriggered = false
+                        end
                     end
-                else
-                    sampAddChatMessage("{0633E5}[AH] {FF0000}Ошибка скачивания: код поврежден.", -1)
+                elseif status == 58 then
+                    sampAddChatMessage("{0633E5}[AH] {FF0000}Не удалось скачать обновление.", -1)
+                    updateTriggered = false
                 end
             end)
         end
