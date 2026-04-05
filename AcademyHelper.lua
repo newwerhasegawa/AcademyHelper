@@ -1,5 +1,5 @@
 script_name("AcademyHelper_Stable_v0.9.4_Merged")
-script_version("0.9.5")
+script_version("0.9.6")
 script_authors("Newer Hasegawa")
 
 local encoding = require 'encoding'
@@ -145,20 +145,18 @@ function checkScriptUpdate()
             updateTriggered = true
             sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдена новая версия {00FF00}v." .. cleanRemoteVer .. "{FFFFFF}, установка...", -1)
             
-            -- Используем ТВОЮ очередь вместо проблемного прямого вызова, 
-            -- чтобы код загрузился в оперативную память и не блокировал файлы.
             queueHttpRequest(SCRIPT_URL .. "?t=" .. os.time(), function(scriptContent)
-                -- Проверка: точно ли скачался код скрипта (защита от ошибки 404)
                 if scriptContent and scriptContent:find("script_name") then
-                    -- Открываем текущий файл скрипта для перезаписи (в бинарном режиме 'wb', чтобы кодировка не сломалась)
                     local f = io.open(thisScript().path, "wb")
                     if f then
+                        -- Добавляем UTF-8 BOM (EF BB BF), чтобы блокноты сразу понимали кодировку
+                        f:write("\239\187\191") 
                         f:write(scriptContent)
                         f:close()
                         sampAddChatMessage("{0633E5}[AH] {00FF00}Обновление завершено. Перезагрузка...", -1)
                         thisScript():reload()
                     else
-                        sampAddChatMessage("{0633E5}[AH] {FF0000}Ошибка: не удалось перезаписать файл скрипта.", -1)
+                        sampAddChatMessage("{0633E5}[AH] {FF0000}Ошибка: не удалось перезаписать файл.", -1)
                     end
                 else
                     sampAddChatMessage("{0633E5}[AH] {FF0000}Ошибка скачивания: код поврежден.", -1)
