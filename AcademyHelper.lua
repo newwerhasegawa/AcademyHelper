@@ -1,15 +1,13 @@
-script_name("AcademyHelper_Stable_v0.9.4_Merged")
-script_version("0.9.6") -- ОБНОВИЛ ВЕРСИЮ, ЧТОБЫ УБРАТЬ ЦИКЛ
+script_name("AcademyHelper_Stable_v0.9.7_Merged")
+script_version("0.9.7")
 script_authors("Newer Hasegawa")
 
--- ПРАВИЛЬНЫЕ ПУТИ (БЕЗ lib.)
 local encoding = require 'encoding'
-local sampev = require 'samp.events'
-local vkeys = require 'vkeys'
+local sampev = require 'lib.samp.events'
+local vkeys = require 'lib.vkeys'
 
 encoding.default = 'CP1251'
 local u8 = encoding.UTF8
-
 math.randomseed(os.time())
 
 -- ================= [ НАСТРОЙКИ ] =================
@@ -20,17 +18,31 @@ local localLecturesVer = ah_dir .. "lectures_version.txt"
 local LECTURES_JSON_URL = "https://raw.githubusercontent.com/newwerhasegawa/AcademyHelper/main/lectures.json"
 local LECTURES_VER_URL = "https://raw.githubusercontent.com/newwerhasegawa/AcademyHelper/main/lectures_version.txt"
 
+-- Ссылки для автообновления скрипта
 local SCRIPT_VER_URL = "https://raw.githubusercontent.com/newwerhasegawa/AcademyHelper/refs/heads/main/version.txt"
 local SCRIPT_URL = "https://raw.githubusercontent.com/newwerhasegawa/AcademyHelper/refs/heads/main/AcademyHelper.lua"
 
 -- ================= [ ПЕРЕМЕННЫЕ ] =================
-local cadetsOnline, tempCadets, cadetsDB = {}, {}, {}
-local isUpdating, lastSyncTimer, updateTriggered = false, 0, false
-local showHUD, font, selectedCadet = true, nil, nil
-local lecturesDB, lectureKeys = {}, {}
-local stopLecture, paused, lectureThread = false, false, nil
-local requestQueue, isRequesting, requestTimestamp = {}, false, 0
+local cadetsOnline = {}
+local tempCadets = {}
+local cadetsDB = {}
+local isUpdating = false
+local lastSyncTimer = 0
+local showHUD = true -- Переменная для отображения HUD
+local font = nil
+local selectedCadet = nil
+local lecturesDB = {}
+local lectureKeys = {}
+local stopLecture = false
+local paused = false
+local lectureThread = nil
+local requestQueue = {}
+local isRequesting = false
+local requestTimestamp = 0
 
+local updateTriggered = false -- Флаг для защиты от двойного обновления
+
+-- ================= [ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ] =================
 function trim(s) return s and s:match("^%s*(.-)%s*$") or "" end
 
 function urlencode(str)
@@ -70,7 +82,9 @@ end
 function smartWait(ms)
     local timer = 0
     while timer < ms do
-        if not paused then timer = timer + 100 end
+        if not paused then
+            timer = timer + 100
+        end
         wait(100)
         if stopLecture then return true end
     end
@@ -84,7 +98,7 @@ function openAhMenu()
     sampShowDialog(9910, "{0633E5}AcademyHelper", s, "Выбор", "Закрыть", 2)
 end
 
--- ================= [ ОЧЕРЕДЬ ЗАПРОСОВ ] =================
+-- ================= [ ОБРАБОТКА ОЧЕРЕДИ ] =================
 function processQueue()
     if isRequesting then
         if os.clock() - requestTimestamp > 12 then isRequesting = false else return end
@@ -96,6 +110,8 @@ function processQueue()
     local prefix = nextReq.url:find("google") and "gas" or (nextReq.url:find("version") and "ver" or "lec")
     local tempPath = string.format("%stmp_%s_%d.json", ah_dir, prefix, os.time())
     
+    if doesFileExist(tempPath) then os.remove(tempPath) end
+    
     downloadUrlToFile(nextReq.url, tempPath, function(id, status)
         if status == 6 then
             local f = io.open(tempPath, "r")
@@ -103,10 +119,14 @@ function processQueue()
                 local content = f:read("*all")
                 f:close()
                 os.remove(tempPath)
-                lua_thread.create(function() if nextReq.callback then nextReq.callback(content) end end)
+                lua_thread.create(function()
+                    if nextReq.callback then nextReq.callback(content) end
+                end)
             end
             isRequesting = false
-        elseif status == 58 then isRequesting = false end
+        elseif status == 58 then -- Ошибка скачивания
+            isRequesting = false
+        end
     end)
 end
 
@@ -121,42 +141,50 @@ function checkScriptUpdate()
         local currentVer = thisScript().version
         local cleanRemoteVer = trim(remoteVer):match("[%d%.]+")
         
-        -- Проверяем, действительно ли версия на гитхабе новее текущей
         if cleanRemoteVer and cleanRemoteVer ~= currentVer and not updateTriggered then
             updateTriggered = true
-            sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдена новая версия {00FF00}v." .. cleanRemoteVer .. "{FFFFFF}, устанавливаю...", -1)
+            sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдена новая версия {00FF00}v." .. cleanRemoteVer .. "{FFFFFF}, установка...", -1)
             
+            -- Используем ТВОЮ очередь вместо проблемного прямого вызова, 
+            -- чтобы код загрузился в оперативную память и не блокировал файлы.
             queueHttpRequest(SCRIPT_URL .. "?t=" .. os.time(), function(scriptContent)
+                -- Проверка: точно ли скачался код скрипта (защита от ошибки 404)
                 if scriptContent and scriptContent:find("script_name") then
-                    -- Конвертируем UTF-8 с гитхаба в 1251 для игры
-                    local content1251 = u8:decode(scriptContent)
+                    -- Открываем текущий файл скрипта для перезаписи (в бинарном режиме 'wb', чтобы кодировка не сломалась)
                     local f = io.open(thisScript().path, "wb")
                     if f then
-                        f:write(content1251)
+                        f:write(scriptContent)
                         f:close()
-                        sampAddChatMessage("{0633E5}[AH] {00FF00}Обновление загружено. Скрипт скоро перезапустится.", -1)
-                        -- Удалили принудительный reload, чтобы не было конфликта с AutoReboot
+                        sampAddChatMessage("{0633E5}[AH] {00FF00}Обновление завершено. Перезагрузка...", -1)
+                        thisScript():reload()
+                    else
+                        sampAddChatMessage("{0633E5}[AH] {FF0000}Ошибка: не удалось перезаписать файл скрипта.", -1)
                     end
+                else
+                    sampAddChatMessage("{0633E5}[AH] {FF0000}Ошибка скачивания: код поврежден.", -1)
                 end
             end)
         end
     end)
 end
 
--- ================= [ ЛЕКЦИИ ] =================
+-- ================= [ ФУНКЦИИ ЛЕКЦИЙ ] =================
 function loadLecturesLocally()
     if not doesFileExist(localLecturesJson) then return false end
     local f = io.open(localLecturesJson, "r")
     if f then
         local content = f:read("*all")
         f:close()
-        local res, data = pcall(decodeJson, content)
-        if res and type(data) == "table" then
-            lecturesDB = data
-            lectureKeys = {}
-            for k, _ in pairs(lecturesDB) do table.insert(lectureKeys, k) end
-            table.sort(lectureKeys)
-            return true
+        if #content > 0 then
+            local res, data = pcall(decodeJson, content)
+            if res and type(data) == "table" then
+                lecturesDB = data
+                lectureKeys = {}
+                for k, _ in pairs(lecturesDB) do table.insert(lectureKeys, k) end
+                table.sort(lectureKeys)
+                print("[AH] Лекции загружены. Всего: " .. #lectureKeys)
+                return true
+            end
         end
     end
     return false
@@ -171,15 +199,14 @@ function updateLecturesFromGitHub()
     queueHttpRequest(LECTURES_VER_URL .. "?t=" .. os.time(), function(content)
         local gitVer = tonumber(content:match("%d+")) or 0
         if gitVer > localVer then
-            sampAddChatMessage("{0633E5}[AH] {FFFFFF}Загрузка новых лекций...", -1)
+            sampAddChatMessage("{0633E5}[AH] {FFFFFF}Загрузка обновления лекций...", -1)
             queueHttpRequest(LECTURES_JSON_URL .. "?t=" .. os.time(), function(jsonContent)
-                local convertedJson = u8:decode(jsonContent)
                 local fJson = io.open(localLecturesJson, "w")
-                if fJson then fJson:write(convertedJson); fJson:close() end
+                if fJson then fJson:write(jsonContent); fJson:close() end
                 local fVer = io.open(localLecturesVer, "w")
                 if fVer then fVer:write(tostring(gitVer)); fVer:close() end
                 loadLecturesLocally()
-                sampAddChatMessage("{0633E5}[AH] {00FF00}Лекции обновлены!", -1)
+                sampAddChatMessage("{0633E5}[AH] {00FF00}Лекции успешно обновлены!", -1)
             end)
         else
             loadLecturesLocally()
@@ -194,21 +221,22 @@ function startLecturePlay(key)
             if stopLecture then break end
             local text = rawLine:gsub("%s*%[wait:%d+%]$", "")
             local waitTime = rawLine:match("%[wait:(%d+)%]") or 8000
-            sampSendChat(text:gsub("{name}", GetNick()))
+            sampSendChat(u8:decode(text):gsub("{name}", GetNick()))
             if smartWait(tonumber(waitTime)) then break end
         end
         lectureThread = nil
-        if not stopLecture then sampAddChatMessage("{0633E5}[AH] {FFFFFF}Лекция окончена", -1) end
+        if not stopLecture then
+            sampAddChatMessage("{0633E5}[AH] {FFFFFF}Лекция окончена", -1)
+        end
         stopLecture = false
     end)
 end
 
--- ================= [ БАЗА ДАННЫХ ] =================
+-- ================= [ БАЗА ДАННЫХ И СИНХРОНИЗАЦИЯ ] =================
 function updateFromBase()
     queueHttpRequest(GAS_URL .. "?action=read&t=" .. os.time(), function(content)
         if content and (content:sub(1,1) == "[" or content:sub(1, 1) == "{") then
-            local decodedContent = u8:decode(content)
-            local res, data = pcall(decodeJson, decodedContent)
+            local res, data = pcall(decodeJson, content)
             if res then
                 local temp = {}
                 for _, row in ipairs(data) do
@@ -227,7 +255,7 @@ function updateCadetInBase(name, col, joinDate, shouldSyncAfter)
     if joinDate then url = url .. "&joinDate=" .. urlencode(joinDate) end
     queueHttpRequest(url, function()
         if shouldSyncAfter then
-            sampAddChatMessage("{0633E5}[AH] {00FF00}Данные синхронизированы.", -1)
+            sampAddChatMessage("{0633E5}[AH] {00FF00}Отметка подтверждена базой. Обновляю список...", -1)
             syncAll()
         end
     end)
@@ -236,6 +264,7 @@ end
 function syncAll()
     if isUpdating then return end
     lastSyncTimer = os.clock()
+    sampAddChatMessage("{0633E5}[AH] {FFFFFF}Синхронизация...", -1)
     updateFromBase()
     lua_thread.create(function()
         wait(500)
@@ -245,23 +274,24 @@ function syncAll()
         local timer = os.clock()
         while isUpdating do
             wait(100)
-            if os.clock() - timer > 3.0 then isUpdating = false; break end
+            if os.clock() - timer > 3.0 then
+                isUpdating = false
+                sampAddChatMessage("{0633E5}[AH] {FF0000}Таймаут команды /members (Сервер не ответил).", -1)
+                break
+            end
         end
     end)
 end
 
 -- ================= [ MAIN ] =================
 function main()
-    if not doesDirectoryExist(ah_dir) then 
-        createDirectory(getWorkingDirectory() .. "\\config")
-        createDirectory(ah_dir) 
-    end
+    if not doesDirectoryExist(ah_dir) then createDirectory(getWorkingDirectory() .. "\\config"); createDirectory(ah_dir) end
     while not isSampAvailable() do wait(100) end
     font = renderCreateFont("Arial", 9, 5)
     loadLecturesLocally()
     
     lua_thread.create(function()
-        checkScriptUpdate() -- Проверка обновления при старте
+        checkScriptUpdate() -- Запускаем проверку при входе
         wait(4000)
         updateLecturesFromGitHub()
         wait(2000)
@@ -269,66 +299,112 @@ function main()
     end)
 
     sampRegisterChatCommand("lectures", function()
+        if #lectureKeys == 0 then loadLecturesLocally() end
+        if #lectureKeys == 0 then
+            sampAddChatMessage("{0633E5}[AH] {FF0000}Список лекций пуст. Проверьте JSON!", -1)
+            return
+        end
         local s = ""
-        for _, k in ipairs(lectureKeys) do s = s .. k .. "\n" end
+        for _, k in ipairs(lectureKeys) do
+            local d = u8:decode(k)
+            if d then s = s .. d .. "\n" end
+        end
         sampShowDialog(9913, "{0633E5}Меню лекций", s, "Выбрать", "Отмена", 2)
     end)
 
-    sampRegisterChatCommand("ah", function() openAhMenu() end)
+    sampRegisterChatCommand("ah", function()
+        if #cadetsOnline == 0 then syncAll(); return end
+        openAhMenu()
+    end)
+    
     sampRegisterChatCommand("updc", syncAll)
 
     while true do
         wait(0)
         processQueue()
         
-        if os.clock() - lastSyncTimer >= 90.0 and not sampIsChatInputActive() and not isUpdating then syncAll() end
-
-        if wasKeyPressed(vkeys.VK_I) and not sampIsChatInputActive() and lectureThread then
-            paused = not paused
-            sampAddChatMessage(paused and "{0633E5}[AH] {FF0000}Пауза" or "{0633E5}[AH] {00FF00}Продолжаем", -1)
+        -- АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ РАЗ В 90 СЕКУНД
+        if os.clock() - lastSyncTimer >= 90.0 then
+            if not sampIsChatInputActive() and not sampIsDialogActive() and not isUpdating then
+                syncAll()
+            end
         end
 
-        if showHUD and not isPauseMenuActive() and font then
+        -- ХОТКЕЙ: CTRL + R ДЛЯ ОБНОВЛЕНИЯ
+        if isKeyDown(vkeys.VK_CONTROL) and wasKeyPressed(vkeys.VK_R) then
+            if not sampIsChatInputActive() and not sampIsDialogActive() then
+                syncAll()
+            end
+        end
+
+        -- ХОТКЕЙ: I ДЛЯ ПАУЗЫ
+        if wasKeyPressed(vkeys.VK_I) and not sampIsChatInputActive() and not sampIsDialogActive() then
+            if lectureThread then
+                paused = not paused
+                if paused then
+                    sampAddChatMessage("{0633E5}[AH] {FF0000}Лекция поставлена на паузу", -1)
+                else
+                    sampAddChatMessage("{0633E5}[AH] {00FF00}Лекция продолжена", -1)
+                end
+            end
+        end
+
+        -- ОТРИСОВКА HUD
+        if showHUD and not isPauseMenuActive() and not isKeyDown(vkeys.VK_F7) and font then
             local count = #cadetsOnline
-            renderDrawBox(20, 320, 240, count > 0 and (40 + (count * 16)) or 56, 0x95000000)
+            local boxHeight = count > 0 and (40 + (count * 16)) or 56
+            renderDrawBox(20, 320, 240, boxHeight, 0x95000000)
             renderFontDrawText(font, "Кадеты Онлайн", 28, 325, 0xFF4682B4)
             if count > 0 then
                 for i, v in ipairs(cadetsOnline) do
+                    local l, t, p, twoDaysPassed = false, false, false, false
                     local db = cadetsDB[trim(v.rawName)]
-                    local l = db and isMarked(db.lecture)
-                    local t = db and isMarked(db.theory)
-                    local p = db and isMarked(db.practice)
-                    local d2 = db and (hasTwoDaysPassed(db.date) or isMarked(db.isTwoDays))
-                    
-                    local text = string.format("%d. %s [%s] ", i, v.displayName, v.id)
-                    renderFontDrawText(font, text, 28, 342 + (i * 16), 0xFFFFFFFF)
-                    local off = renderGetFontDrawTextLength(font, text)
-                    renderFontDrawText(font, "[Л]", 28 + off, 342 + (i * 16), l and 0xFF00FF00 or 0xFFFF4D4D)
-                    off = off + renderGetFontDrawTextLength(font, "[Л]")
-                    renderFontDrawText(font, "[Т]", 28 + off, 342 + (i * 16), t and 0xFF00FF00 or 0xFFFF4D4D)
-                    off = off + renderGetFontDrawTextLength(font, "[Т]")
-                    renderFontDrawText(font, "[П]", 28 + off, 342 + (i * 16), p and 0xFF00FF00 or 0xFFFF4D4D)
-                    off = off + renderGetFontDrawTextLength(font, "[П]")
-                    renderFontDrawText(font, "[Д]", 28 + off, 342 + (i * 16), d2 and 0xFF00FF00 or 0xFFFF4D4D)
+                    if db then
+                        l = isMarked(db.lecture)
+                        t = isMarked(db.theory)
+                        p = isMarked(db.practice)
+                        twoDaysPassed = hasTwoDaysPassed(db.date) or isMarked(db.isTwoDays)
+                    end
+                    local baseX = 28
+                    local baseY = 342 + (i * 16)
+                    local textBase = string.format("%d. %s [%s] ", i, v.displayName, v.id)
+                    renderFontDrawText(font, textBase, baseX, baseY, 0xFFFFFFFF)
+                    local offset = renderGetFontDrawTextLength(font, textBase)
+                    local colL = l and 0xFF00FF00 or 0xFFFF4D4D
+                    renderFontDrawText(font, "[Л]", baseX + offset, baseY, colL)
+                    offset = offset + renderGetFontDrawTextLength(font, "[Л]")
+                    local colT = t and 0xFF00FF00 or 0xFFFF4D4D
+                    renderFontDrawText(font, "[Т]", baseX + offset, baseY, colT)
+                    offset = offset + renderGetFontDrawTextLength(font, "[Т]")
+                    local colP = p and 0xFF00FF00 or 0xFFFF4D4D
+                    renderFontDrawText(font, "[П]", baseX + offset, baseY, colP)
+                    offset = offset + renderGetFontDrawTextLength(font, "[П]")
+                    local colD = twoDaysPassed and 0xFF00FF00 or 0xFFFF4D4D
+                    renderFontDrawText(font, "[Д]", baseX + offset, baseY, colD)
                 end
+            else
+                renderFontDrawText(font, "—", 28, 345, 0xFFFFFFFF)
             end
         end
     end
 end
 
--- ================= [ EVENTS ] =================
+-- ================= [ СОБЫТИЯ ] =================
 function sampev.onSendDialogResponse(id, btn, lst, inp)
-    if id == 9910 and btn == 1 then
-        if lst == 0 then
-            showHUD = not showHUD
-            lua_thread.create(function() wait(10); openAhMenu() end)
-        else
-            selectedCadet = cadetsOnline[lst]
-            if selectedCadet then
-                lua_thread.create(function()
-                    wait(10)
-                    sampShowDialog(9911, "{0633E5}" .. selectedCadet.displayName, "Лекция\nТеория\nПрактика\n{A020F0}Информация\n{FF0000}Сброс прогресса", "ОК", "Назад", 2)
-                end)
+    if id == 9910 then
+        if btn == 1 then
+            if lst == 0 then
+                showHUD = not showHUD
+                sampAddChatMessage(showHUD and "{0633E5}[AH] {00FF00}Отображение HUD включено" or "{0633E5}[AH] {FF0000}Отображение HUD выключено", -1)
+                lua_thread.create(function() wait(10); openAhMenu() end)
+            else
+                selectedCadet = cadetsOnline[lst]
+                if selectedCadet then
+                    lua_thread.create(function()
+                        wait(10)
+                        sampShowDialog(9911, "{0633E5}" .. selectedCadet.displayName, "Лекция\nТеория\nПрактика\n{A020F0}Информация\n{FF0000}Сброс прогресса", "ОК", "Назад", 2)
+                    end)
+                end
             end
         end
         return false
@@ -340,24 +416,43 @@ function sampev.onSendDialogResponse(id, btn, lst, inp)
                 local t = (db and isMarked(db.theory)) and "{00FF00}прошел" or "{FF0000}не прошел"
                 local p = (db and isMarked(db.practice)) and "{00FF00}прошел" or "{FF0000}не прошел"
                 local d = (db and (hasTwoDaysPassed(db.date) or isMarked(db.isTwoDays))) and "{00FF00}прошло" or "{FF0000}не прошло"
-                local info = string.format("Лекция: %s\n{FFFFFF}Теория: %s\n{FFFFFF}Практика: %s\n{FFFFFF}Два дня: %s", l, t, p, d)
-                lua_thread.create(function() wait(10); sampShowDialog(9912, "{0633E5}Инфо: " .. selectedCadet.displayName, info, "Назад", "", 0) end)
+                local info_text = string.format("Лекция: %s\n{FFFFFF}Теория: %s\n{FFFFFF}Практика: %s\n{FFFFFF}Два дня: %s", l, t, p, d)
+                lua_thread.create(function() wait(10); sampShowDialog(9912, "{0633E5}Инфо: " .. selectedCadet.displayName, info_text, "Назад", "", 0) end)
             elseif lst == 4 then
+                sampAddChatMessage("{0633E5}[AH] {FFFFFF}Запрос на сброс отправлен...", -1)
+                if cadetsDB[trim(selectedCadet.rawName)] then cadetsDB[trim(selectedCadet.rawName)] = nil end
                 updateCadetInBase(selectedCadet.rawName, "reset", nil, true)
             else
-                local cols = {"lecture", "theory", "practice"}
-                updateCadetInBase(selectedCadet.rawName, cols[lst+1], nil, true)
+                sampAddChatMessage("{0633E5}[AH] {FFFFFF}Запрос на обновление отправлен...", -1)
+                local columns = {"lecture", "theory", "practice"}
+                local colName = columns[lst + 1]
+                local safeName = trim(selectedCadet.rawName)
+                if not cadetsDB[safeName] then cadetsDB[safeName] = {} end
+                cadetsDB[safeName][colName] = "1"
+                updateCadetInBase(selectedCadet.rawName, colName, nil, true)
             end
-        else lua_thread.create(function() wait(10); openAhMenu() end) end
+        else
+            lua_thread.create(function() wait(10); openAhMenu() end)
+        end
         return false
     elseif id == 9912 then
         lua_thread.create(function() wait(10); sampShowDialog(9911, "{0633E5}" .. selectedCadet.displayName, "Лекция\nТеория\nПрактика\n{A020F0}Информация\n{FF0000}Сброс прогресса", "ОК", "Назад", 2) end)
         return false
-    elseif id == 9913 and btn == 1 then
-        local key = lectureKeys[lst+1]
-        if key then
-            if lectureThread then stopLecture = true; lua_thread.create(function() while lectureThread do wait(10) end; startLecturePlay(key) end)
-            else startLecturePlay(key) end
+    elseif id == 9913 then
+        if btn == 1 then
+            local key = lectureKeys[lst + 1]
+            if key and lecturesDB[key] then
+                if lectureThread then
+                    stopLecture = true
+                    lua_thread.create(function()
+                        while lectureThread ~= nil do wait(10) end
+                        stopLecture = false
+                        startLecturePlay(key)
+                    end)
+                else
+                    startLecturePlay(key)
+                end
+            end
         end
         return false
     end
@@ -365,17 +460,20 @@ end
 
 function sampev.onServerMessage(clr, txt)
     if isUpdating then
-        local clean = txt:gsub("{%x+}", "")
-        if clean:find("ID:") and (clean:find("Кадет") or clean:find("Cadet")) then
-            local id, d_mem, nick = clean:match("ID:%s*(%d+)%s*|%s*%d+:%d+%s*([%d%.]+)%s*|%s*([%a%d_]+)")
-            if nick then table.insert(tempCadets, {rawName = nick, displayName = nick:gsub("_", " "), id = id, joinDate = d_mem}) end
+        local cleanTxt = txt:gsub("{%x+}", "")
+        if cleanTxt:find("ID:") and (cleanTxt:find("Кадет") or cleanTxt:find("Cadet")) then
+            local id, date_mem, nick = cleanTxt:match("ID:%s*(%d+)%s*|%s*%d+:%d+%s*([%d%.]+)%s*|%s*([%a%d_]+)")
+            if nick and id then
+                table.insert(tempCadets, {rawName = nick, displayName = nick:gsub("_", " "), id = id, joinDate = date_mem})
+            end
             return false
         end
-        if clean:find("Всего") or clean:find("Онлайн") then
+        if cleanTxt:find("Всего%:") or cleanTxt:find("Всего в сети") or cleanTxt:find("Онлайн организации") then
             isUpdating = false
             cadetsOnline = tempCadets
             for _, c in ipairs(cadetsOnline) do updateCadetInBase(c.rawName, nil, c.joinDate, false) end
             return false
         end
+        return false
     end
 end
