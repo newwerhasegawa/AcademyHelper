@@ -1,13 +1,12 @@
 script_name("AcademyHelper_Stable_v0.9.4_Merged")
-script_version("0.9.7")
+script_version("0.9.6") -- ОБНОВИЛ ВЕРСИЮ, ЧТОБЫ УБРАТЬ ЦИКЛ
 script_authors("Newer Hasegawa")
 
--- ПРАВИЛЬНЫЕ ПУТИ
+-- ПРАВИЛЬНЫЕ ПУТИ (БЕЗ lib.)
 local encoding = require 'encoding'
 local sampev = require 'samp.events'
 local vkeys = require 'vkeys'
 
--- Настройка для работы с кодировками
 encoding.default = 'CP1251'
 local u8 = encoding.UTF8
 
@@ -122,19 +121,21 @@ function checkScriptUpdate()
         local currentVer = thisScript().version
         local cleanRemoteVer = trim(remoteVer):match("[%d%.]+")
         
+        -- Проверяем, действительно ли версия на гитхабе новее текущей
         if cleanRemoteVer and cleanRemoteVer ~= currentVer and not updateTriggered then
             updateTriggered = true
-            sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдена новая версия {00FF00}v." .. cleanRemoteVer .. "{FFFFFF}, установка...", -1)
+            sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдена новая версия {00FF00}v." .. cleanRemoteVer .. "{FFFFFF}, устанавливаю...", -1)
             
             queueHttpRequest(SCRIPT_URL .. "?t=" .. os.time(), function(scriptContent)
                 if scriptContent and scriptContent:find("script_name") then
+                    -- Конвертируем UTF-8 с гитхаба в 1251 для игры
                     local content1251 = u8:decode(scriptContent)
                     local f = io.open(thisScript().path, "wb")
                     if f then
                         f:write(content1251)
                         f:close()
-                        sampAddChatMessage("{0633E5}[AH] {00FF00}Обновление завершено. Перезагрузка...", -1)
-                        thisScript():reload()
+                        sampAddChatMessage("{0633E5}[AH] {00FF00}Обновление загружено. Скрипт скоро перезапустится.", -1)
+                        -- Удалили принудительный reload, чтобы не было конфликта с AutoReboot
                     end
                 end
             end)
@@ -170,7 +171,7 @@ function updateLecturesFromGitHub()
     queueHttpRequest(LECTURES_VER_URL .. "?t=" .. os.time(), function(content)
         local gitVer = tonumber(content:match("%d+")) or 0
         if gitVer > localVer then
-            sampAddChatMessage("{0633E5}[AH] {FFFFFF}Загрузка обновления лекций...", -1)
+            sampAddChatMessage("{0633E5}[AH] {FFFFFF}Загрузка новых лекций...", -1)
             queueHttpRequest(LECTURES_JSON_URL .. "?t=" .. os.time(), function(jsonContent)
                 local convertedJson = u8:decode(jsonContent)
                 local fJson = io.open(localLecturesJson, "w")
@@ -178,7 +179,7 @@ function updateLecturesFromGitHub()
                 local fVer = io.open(localLecturesVer, "w")
                 if fVer then fVer:write(tostring(gitVer)); fVer:close() end
                 loadLecturesLocally()
-                sampAddChatMessage("{0633E5}[AH] {00FF00}Лекции успешно обновлены!", -1)
+                sampAddChatMessage("{0633E5}[AH] {00FF00}Лекции обновлены!", -1)
             end)
         else
             loadLecturesLocally()
@@ -226,7 +227,7 @@ function updateCadetInBase(name, col, joinDate, shouldSyncAfter)
     if joinDate then url = url .. "&joinDate=" .. urlencode(joinDate) end
     queueHttpRequest(url, function()
         if shouldSyncAfter then
-            sampAddChatMessage("{0633E5}[AH] {00FF00}Отметка подтверждена базой. Обновляю список...", -1)
+            sampAddChatMessage("{0633E5}[AH] {00FF00}Данные синхронизированы.", -1)
             syncAll()
         end
     end)
@@ -235,7 +236,6 @@ end
 function syncAll()
     if isUpdating then return end
     lastSyncTimer = os.clock()
-    sampAddChatMessage("{0633E5}[AH] {FFFFFF}Синхронизация...", -1)
     updateFromBase()
     lua_thread.create(function()
         wait(500)
@@ -261,7 +261,7 @@ function main()
     loadLecturesLocally()
     
     lua_thread.create(function()
-        checkScriptUpdate()
+        checkScriptUpdate() -- Проверка обновления при старте
         wait(4000)
         updateLecturesFromGitHub()
         wait(2000)
@@ -285,7 +285,7 @@ function main()
 
         if wasKeyPressed(vkeys.VK_I) and not sampIsChatInputActive() and lectureThread then
             paused = not paused
-            sampAddChatMessage(paused and "{0633E5}[AH] {FF0000}Лекция на паузе" or "{0633E5}[AH] {00FF00}Лекция продолжена", -1)
+            sampAddChatMessage(paused and "{0633E5}[AH] {FF0000}Пауза" or "{0633E5}[AH] {00FF00}Продолжаем", -1)
         end
 
         if showHUD and not isPauseMenuActive() and font then
