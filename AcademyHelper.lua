@@ -101,7 +101,8 @@ end
 -- ================= [ ОБРАБОТКА ОЧЕРЕДИ ] =================
 function processQueue()
     if isRequesting then
-        if os.clock() - requestTimestamp > 12 then isRequesting = false else return end
+        if os.clock() - requestTimestamp > 15 then isRequesting = false end
+        return 
     end
     if #requestQueue == 0 then return end
     
@@ -109,26 +110,31 @@ function processQueue()
     requestTimestamp = os.clock()
     local nextReq = table.remove(requestQueue, 1)
     
-    -- Добавляем случайное число к имени файла, чтобы не было "Resource Busy"
-    local tempPath = string.format("%stmp_%d%d.json", ah_dir, os.time(), math.random(100, 999))
+    local tempPath = string.format("%stmp_%d%d.tmp", ah_dir, os.time(), math.random(1000, 9999))
     
-    downloadUrlToFile(nextReq.url, tempPath, function(id, status)
+    -- Используем pcall, чтобы "resource busy" не убивал весь скрипт
+    local dl_status, dl_err = pcall(downloadUrlToFile, nextReq.url, tempPath, function(id, status)
         if status == 6 then
             local f = io.open(tempPath, "r")
             if f then
                 local content = f:read("*all")
                 f:close()
-                -- Небольшая задержка перед удалением, чтобы система успела закрыть файл
                 os.remove(tempPath)
                 lua_thread.create(function()
                     if nextReq.callback then nextReq.callback(content) end
                 end)
             end
             isRequesting = false
-        elseif status == 58 or status == 7 then -- Добавили 7 (ошибка протокола)
+        elseif status == 58 or status == 7 or status == -1 then 
+            if doesFileExist(tempPath) then os.remove(tempPath) end
             isRequesting = false
         end
     end)
+
+    if not dl_status then
+        -- Если MoonLoader всё же занят, просто пробуем позже, не вылетая
+        isRequesting = false
+    end
 end
 
 function queueHttpRequest(url, callback)
@@ -146,32 +152,21 @@ function checkScriptUpdate()
             updateTriggered = true
             sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдена новая версия {00FF00}v." .. cleanRemoteVer .. "{FFFFFF}, установка...", -1)
             
-            -- Используем уникальное имя для временного файла обновления
-            local tempUpdatePath = getWorkingDirectory() .. "\\AH_upd_" .. math.random(100, 999) .. ".lua"
-            
-            downloadUrlToFile(SCRIPT_URL .. "?t=" .. os.time(), tempUpdatePath, function(id, status)
-                if status == 6 then
-                    local f = io.open(tempUpdatePath, "r")
-                    if f then
-                        local checkContent = f:read("*all")
-                        f:close()
-                        
-                        if checkContent:find("script_name") then
-                            local mainF = io.open(thisScript().path, "wb")
-                            if mainF then
-                                -- ТУТ ВАЖНО: Декодируем в 1251 для Notepad++
-                                mainF:write(u8:decode(checkContent)) 
-                                mainF:close()
-                                os.remove(tempUpdatePath)
-                                sampAddChatMessage("{0633E5}[AH] {00FF00}Обновление завершено. Перезагрузка...", -1)
-                                thisScript():reload()
-                            end
-                        else
-                            os.remove(tempUpdatePath)
-                            updateTriggered = false
-                        end
+            -- Скачивание самого кода скрипта теперь ТОЖЕ через очередь
+            queueHttpRequest(SCRIPT_URL .. "?t=" .. os.time(), function(checkContent)
+                if checkContent and checkContent:find("script_name") then
+                    local mainF = io.open(thisScript().path, "wb")
+                    if mainF then
+                        mainF:write(u8:decode(checkContent)) 
+                        mainF:close()
+                        sampAddChatMessage("{0633E5}[AH] {00FF00}Обновление завершено. Перезагрузка...", -1)
+                        thisScript():reload()
+                    else
+                        sampAddChatMessage("{0633E5}[AH] {FF0000}Не удалось перезаписать файл. Закройте другие программы!", -1)
+                        updateTriggered = false
                     end
-                elseif status ~= 3 then -- Если не в процессе
+                else
+                    sampAddChatMessage("{0633E5}[AH] {FF0000}Ошибка: Файл обновления пуст или поврежден.", -1)
                     updateTriggered = false
                 end
             end)
