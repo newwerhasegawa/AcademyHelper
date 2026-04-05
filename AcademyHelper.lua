@@ -145,17 +145,23 @@ function checkScriptUpdate()
             updateTriggered = true
             sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдена новая версия {00FF00}v." .. cleanRemoteVer .. "{FFFFFF}, установка...", -1)
             
-            -- Безопасное скачивание во временный файл
-            local updateFilePath = thisScript().path .. ".tmp"
-            downloadUrlToFile(SCRIPT_URL .. "?t=" .. os.time(), updateFilePath, function(id, status)
-                if status == 6 then
-                    lua_thread.create(function()
-                        wait(1000) -- Ждем, чтобы файл точно освободился
-                        os.remove(thisScript().path) -- Удаляем старый скрипт
-                        os.rename(updateFilePath, thisScript().path) -- Ставим новый
+            -- Используем ТВОЮ очередь вместо проблемного прямого вызова, 
+            -- чтобы код загрузился в оперативную память и не блокировал файлы.
+            queueHttpRequest(SCRIPT_URL .. "?t=" .. os.time(), function(scriptContent)
+                -- Проверка: точно ли скачался код скрипта (защита от ошибки 404)
+                if scriptContent and scriptContent:find("script_name") then
+                    -- Открываем текущий файл скрипта для перезаписи (в бинарном режиме 'wb', чтобы кодировка не сломалась)
+                    local f = io.open(thisScript().path, "wb")
+                    if f then
+                        f:write(scriptContent)
+                        f:close()
                         sampAddChatMessage("{0633E5}[AH] {00FF00}Обновление завершено. Перезагрузка...", -1)
                         thisScript():reload()
-                    end)
+                    else
+                        sampAddChatMessage("{0633E5}[AH] {FF0000}Ошибка: не удалось перезаписать файл скрипта.", -1)
+                    end
+                else
+                    sampAddChatMessage("{0633E5}[AH] {FF0000}Ошибка скачивания: код поврежден.", -1)
                 end
             end)
         end
@@ -285,7 +291,7 @@ function main()
     loadLecturesLocally()
     
     lua_thread.create(function()
-        checkScriptUpdate() -- [ДОБАВЛЕН ВЫЗОВ АВТООБНОВЛЕНИЯ]
+        checkScriptUpdate() -- Запускаем проверку при входе
         wait(4000)
         updateLecturesFromGitHub()
         wait(2000)
@@ -312,7 +318,7 @@ function main()
     end)
     
     sampRegisterChatCommand("updc", syncAll)
-    
+
     while true do
         wait(0)
         processQueue()
@@ -323,14 +329,14 @@ function main()
                 syncAll()
             end
         end
-        
-        -- ХОТКЕЙ: CTRL + R ДЛЯ ОБНОВЛЕНИЯ (Используем нативную wasKeyPressed)
+
+        -- ХОТКЕЙ: CTRL + R ДЛЯ ОБНОВЛЕНИЯ
         if isKeyDown(vkeys.VK_CONTROL) and wasKeyPressed(vkeys.VK_R) then
             if not sampIsChatInputActive() and not sampIsDialogActive() then
                 syncAll()
             end
         end
-        
+
         -- ХОТКЕЙ: I ДЛЯ ПАУЗЫ
         if wasKeyPressed(vkeys.VK_I) and not sampIsChatInputActive() and not sampIsDialogActive() then
             if lectureThread then
@@ -342,7 +348,7 @@ function main()
                 end
             end
         end
-        
+
         -- ОТРИСОВКА HUD
         if showHUD and not isPauseMenuActive() and not isKeyDown(vkeys.VK_F7) and font then
             local count = #cadetsOnline
@@ -387,12 +393,12 @@ end
 function sampev.onSendDialogResponse(id, btn, lst, inp)
     if id == 9910 then
         if btn == 1 then
-            if lst == 0 then -- Нажата нулевая строка (переключатель HUD)
+            if lst == 0 then
                 showHUD = not showHUD
                 sampAddChatMessage(showHUD and "{0633E5}[AH] {00FF00}Отображение HUD включено" or "{0633E5}[AH] {FF0000}Отображение HUD выключено", -1)
-                lua_thread.create(function() wait(10); openAhMenu() end) -- Переоткрываем для обновления статуса
+                lua_thread.create(function() wait(10); openAhMenu() end)
             else
-                selectedCadet = cadetsOnline[lst] -- lst начинается с 1 для кадетов, т.к. 0 это HUD
+                selectedCadet = cadetsOnline[lst]
                 if selectedCadet then
                     lua_thread.create(function()
                         wait(10)
@@ -426,10 +432,7 @@ function sampev.onSendDialogResponse(id, btn, lst, inp)
                 updateCadetInBase(selectedCadet.rawName, colName, nil, true)
             end
         else
-            lua_thread.create(function()
-                wait(10)
-                openAhMenu()
-            end)
+            lua_thread.create(function() wait(10); openAhMenu() end)
         end
         return false
     elseif id == 9912 then
