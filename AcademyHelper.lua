@@ -144,36 +144,44 @@ end
 -- ================= [ АВТООБНОВЛЕНИЕ СКРИПТА ] =================
 function checkScriptUpdate()
     if updateTriggered then return end
+    -- Запрашиваем версию через очередь
     queueHttpRequest(SCRIPT_VER_URL .. "?t=" .. os.time(), function(remoteVer)
         local currentVer = thisScript().version
         local cleanRemoteVer = trim(remoteVer):match("[%d%.]+")
         
-        if cleanRemoteVer and cleanRemoteVer ~= currentVer and not updateTriggered then
+        if cleanRemoteVer and cleanRemoteVer ~= currentVer then
             updateTriggered = true
-            sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдена новая версия {00FF00}v." .. cleanRemoteVer .. "{FFFFFF}, установка...", -1)
+            sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдена версия {00FF00}v." .. cleanRemoteVer .. "{FFFFFF}. Начинаю загрузку...", -1)
             
-            -- Скачивание самого кода скрипта теперь ТОЖЕ через очередь
-            queueHttpRequest(SCRIPT_URL .. "?t=" .. os.time(), function(checkContent)
-                if checkContent and checkContent:find("script_name") then
-                    local mainF = io.open(thisScript().path, "wb")
-                    if mainF then
-                        mainF:write(u8:decode(checkContent)) 
-                        mainF:close()
-                        sampAddChatMessage("{0633E5}[AH] {00FF00}Обновление завершено. Перезагрузка...", -1)
-                        thisScript():reload()
+            -- ВАЖНО: Скачиваем само тело скрипта тоже через очередь во временную переменную
+            queueHttpRequest(SCRIPT_URL .. "?t=" .. os.time(), function(content)
+                if content and content:find("script_name") then
+                    -- Открываем основной файл скрипта на перезапись
+                    local f = io.open(thisScript().path, "wb")
+                    if f then
+                        -- Декодируем, если нужно, и сохраняем
+                        f:write(u8:decode(content))
+                        f:close()
+                        
+                        sampAddChatMessage("{0633E5}[AH] {00FF00}Файл обновлен. Перезагрузка через 1 сек...", -1)
+                        
+                        -- Перезагружаем через отдельный поток с задержкой, чтобы не вешать Lua-стек
+                        lua_thread.create(function()
+                            wait(1000) 
+                            thisScript():reload()
+                        end)
                     else
-                        sampAddChatMessage("{0633E5}[AH] {FF0000}Не удалось перезаписать файл. Закройте другие программы!", -1)
+                        sampAddChatMessage("{0633E5}[AH] {FF0000}Ошибка: Файл занят другой программой!", -1)
                         updateTriggered = false
                     end
                 else
-                    sampAddChatMessage("{0633E5}[AH] {FF0000}Ошибка: Файл обновления пуст или поврежден.", -1)
+                    sampAddChatMessage("{0633E5}[AH] {FF0000}Ошибка: Получен пустой файл обновления.", -1)
                     updateTriggered = false
                 end
             end)
         end
     end)
 end
-
 -- ================= [ ФУНКЦИИ ЛЕКЦИЙ ] =================
 function loadLecturesLocally()
     if not doesFileExist(localLecturesJson) then return false end
