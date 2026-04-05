@@ -1,5 +1,5 @@
-script_name("AcademyHelper_Stable_v0.9.7_Merged")
-script_version("0.9.7")
+script_name("AcademyHelper_Stable_v0.9.8_Merged")
+script_version("0.9.8")
 script_authors("Newer Hasegawa")
 
 local encoding = require 'encoding'
@@ -164,10 +164,10 @@ function checkScriptUpdate()
                         
                         if checkContent:find("script_name") then
                             -- Записываем проверенный код в оригинальный файл
-                            local mainF = io.open(thisScript().path, "wb")
-                            if mainF then
-                                mainF:write(checkContent)
-                                mainF:close()
+                        local mainF = io.open(thisScript().path, "wb")
+                        if mainF then
+                        mainF:write(u8:decode(checkContent)) 
+                           mainF:close()
                                 os.remove(tempUpdatePath)
                                 sampAddChatMessage("{0633E5}[AH] {00FF00}Обновление завершено. Перезагрузка...", -1)
                                 thisScript():reload()
