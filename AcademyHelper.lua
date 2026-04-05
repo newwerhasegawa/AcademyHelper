@@ -1,5 +1,5 @@
-script_name("AcademyHelper_Stable_v0.9.8_Merged")
-script_version("0.9.8")
+script_name("AcademyHelper_Stable_v0.9.9_Merged")
+script_version("0.9.9")
 script_authors("Newer Hasegawa")
 
 local encoding = require 'encoding'
@@ -104,20 +104,13 @@ function processQueue()
         if os.clock() - requestTimestamp > 12 then isRequesting = false else return end
     end
     if #requestQueue == 0 then return end
+    
     isRequesting = true
     requestTimestamp = os.clock()
     local nextReq = table.remove(requestQueue, 1)
-    local prefix = nextReq.url:find("google") and "gas" or (nextReq.url:find("version") and "ver" or "lec")
     
-    -- [ВАЖНО] Защита от краша urlmon.dll: проверяем наличие папки ПЕРЕД КАЖДЫМ скачиванием
-    if not doesDirectoryExist(ah_dir) then 
-        createDirectory(getWorkingDirectory() .. "\\config")
-        createDirectory(ah_dir) 
-    end
-
-    local tempPath = string.format("%stmp_%s_%d.json", ah_dir, prefix, os.time())
-    
-    if doesFileExist(tempPath) then os.remove(tempPath) end
+    -- Добавляем случайное число к имени файла, чтобы не было "Resource Busy"
+    local tempPath = string.format("%stmp_%d%d.json", ah_dir, os.time(), math.random(100, 999))
     
     downloadUrlToFile(nextReq.url, tempPath, function(id, status)
         if status == 6 then
@@ -125,13 +118,14 @@ function processQueue()
             if f then
                 local content = f:read("*all")
                 f:close()
+                -- Небольшая задержка перед удалением, чтобы система успела закрыть файл
                 os.remove(tempPath)
                 lua_thread.create(function()
                     if nextReq.callback then nextReq.callback(content) end
                 end)
             end
             isRequesting = false
-        elseif status == 58 then -- Ошибка скачивания
+        elseif status == 58 or status == 7 then -- Добавили 7 (ошибка протокола)
             isRequesting = false
         end
     end)
@@ -152,34 +146,32 @@ function checkScriptUpdate()
             updateTriggered = true
             sampAddChatMessage("{0633E5}[AH] {FFFFFF}Найдена новая версия {00FF00}v." .. cleanRemoteVer .. "{FFFFFF}, установка...", -1)
             
-            -- Качаем скрипт напрямую, минуя JSON очередь.
-            local tempUpdatePath = getWorkingDirectory() .. "\\AH_update_temp.lua"
+            -- Используем уникальное имя для временного файла обновления
+            local tempUpdatePath = getWorkingDirectory() .. "\\AH_upd_" .. math.random(100, 999) .. ".lua"
+            
             downloadUrlToFile(SCRIPT_URL .. "?t=" .. os.time(), tempUpdatePath, function(id, status)
                 if status == 6 then
-                    -- Проверяем, что скачался именно Lua код, а не ошибка провайдера/GitHub
                     local f = io.open(tempUpdatePath, "r")
                     if f then
                         local checkContent = f:read("*all")
                         f:close()
                         
                         if checkContent:find("script_name") then
-                            -- Записываем проверенный код в оригинальный файл
-                        local mainF = io.open(thisScript().path, "wb")
-                        if mainF then
-                        mainF:write(u8:decode(checkContent)) 
-                           mainF:close()
+                            local mainF = io.open(thisScript().path, "wb")
+                            if mainF then
+                                -- ТУТ ВАЖНО: Декодируем в 1251 для Notepad++
+                                mainF:write(u8:decode(checkContent)) 
+                                mainF:close()
                                 os.remove(tempUpdatePath)
                                 sampAddChatMessage("{0633E5}[AH] {00FF00}Обновление завершено. Перезагрузка...", -1)
                                 thisScript():reload()
                             end
                         else
                             os.remove(tempUpdatePath)
-                            sampAddChatMessage("{0633E5}[AH] {FF0000}Ошибка: скачан поврежденный код.", -1)
                             updateTriggered = false
                         end
                     end
-                elseif status == 58 then
-                    sampAddChatMessage("{0633E5}[AH] {FF0000}Не удалось скачать обновление.", -1)
+                elseif status ~= 3 then -- Если не в процессе
                     updateTriggered = false
                 end
             end)
@@ -240,7 +232,7 @@ function startLecturePlay(key)
             if stopLecture then break end
             local text = rawLine:gsub("%s*%[wait:%d+%]$", "")
             local waitTime = rawLine:match("%[wait:(%d+)%]") or 8000
-            sampSendChat(u8:decode(text):gsub("{name}", GetNick()))
+            sampSendChat(text:gsub("{name}", GetNick()))
             if smartWait(tonumber(waitTime)) then break end
         end
         lectureThread = nil
