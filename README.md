@@ -17,8 +17,8 @@
 
 | Вариант | Инструкция |
 | :--- | :--- |
-| 📦 **Полный архив (Все в одном)** | [📥 Скачать .zip](https://github.com/newwerhasegawa/AcademyHelper/raw/main/AcademyHelper_Full.zip) <br> Распакуйте содержимое в папку `moonloader` вашего клиента с заменой. |
-| 📄 **Только скрипт (.lua)** | [📥 Скачать .lua](https://github.com/newwerhasegawa/AcademyHelper/raw/main/AcademyHelper.lua) <br> Закиньте файл в папку `moonloader`. Требуется наличие всех библиотек. |
+| 📦 **Полный архив (Все в одном)** | [📥 Скачать .zip](https://github.com/newwerhasegawa/AcademyHelper/raw/main/AcademyHelper_Full.zip?download=) <br> Распакуйте содержимое в папку `moonloader` вашего клиента с заменой. |
+| 📄 **Только скрипт (.lua)** | [📥 Скачать .lua](https://github.com/newwerhasegawa/AcademyHelper/raw/main/AcademyHelper.lua?download=) <br> Закиньте файл в папку `moonloader`. Требуется наличие всех библиотек. |
 
 ---
 
