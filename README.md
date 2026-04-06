@@ -24,7 +24,7 @@
 
 👉 **[Смотреть видеообзор скрипта/таблицы/лекций](https://rutube.ru/video/private/f51fbe009ef74da5cb3fcbe7f8f2a509/?p=ygwTU6mdq_iwAXTVAFSDOg)**
 
-👉 **[Смотреть видеообзор скрипта/взаимодействие бота в ВК](https://rutube.ru/video/private/f543df6c3c02295d27b72762b87b08c8/?p=vGLWLB1EouiVvNSjeRy3mA)**
+👉 **[Смотреть видеообзор скрипта/взаимодействие бота в ВК](https://rutube.ru/video/private/107a87f6168856733c3a534029c97ab0/?p=koEh5wQlm3MOxL2PcKxmDQ)**
 
 ---
 
