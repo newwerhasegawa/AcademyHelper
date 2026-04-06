@@ -15,10 +15,26 @@
 
 ### 🛠 Установка
 
-| Вариант | Инструкция |
-| :--- | :--- |
-| 📦 **Полный архив (Все в одном)** | [📥 Скачать .zip](https://github.com/newwerhasegawa/AcademyHelper/raw/main/AcademyHelper_Full.zip?download=) <br> Распакуйте содержимое в папку `moonloader` вашего клиента с заменой. |
-| 📄 **Только скрипт (.lua)** | [📥 Скачать .lua](https://github.com/newwerhasegawa/AcademyHelper/raw/main/AcademyHelper.lua?download=) <br> Закиньте файл в папку `moonloader`. Требуется наличие всех библиотек. |
+<table>
+  <tr>
+    <th>Вариант</th>
+    <th>Инструкция</th>
+  </tr>
+  <tr>
+    <td>📦 <b>Полный архив (Все в одном)</b></td>
+    <td>
+      <a href="https://github.com/newwerhasegawa/AcademyHelper/raw/main/AcademyHelper_Full.zip" download>📥 Скачать .zip</a><br>
+      Распакуйте содержимое в папку <code>moonloader</code> вашего клиента с заменой.
+    </td>
+  </tr>
+  <tr>
+    <td>📄 <b>Только скрипт (.lua)</b></td>
+    <td>
+      <a href="https://github.com/newwerhasegawa/AcademyHelper/raw/main/AcademyHelper.lua" download>📥 Скачать .lua</a><br>
+      Закиньте файл в папку <code>moonloader</code>. Требуется наличие всех библиотек.
+    </td>
+  </tr>
+</table>
 
 ---
 
