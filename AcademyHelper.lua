@@ -10,8 +10,8 @@ encoding.default = 'CP1251'
 local u8 = encoding.UTF8
 math.randomseed(os.time())
 
--- ================= [ НАСТРОЙКИ ] =================
-local GAS_URL = "https://script.google.com/macros/s/AKfycbxrIL2zG4QykQRR2jtKYCXwc9t75UQtDcz450XfqnHxMr6EFRhPmH2KkkONVwjbiZQ2Pg/exec"
+-- ================= [ ССЫЛКИ ] =================
+local GAS_URL = "https://script.google.com/macros/s/AKfycbyZWGjcx2ibc3_ltI1D1pwh1qd0pjYcCIiRbEy4tystZeUne10s7n3v1aBNUkrNLXVAlQ/exec"
 local ah_dir = getWorkingDirectory() .. "\\config\\AcademyHelper\\"
 local localLecturesJson = ah_dir .. "lectures.json"
 local localLecturesVer = ah_dir .. "lectures_version.txt"
@@ -42,8 +42,20 @@ local requestTimestamp = 0
 local updateTriggered = false 
 local isScriptActive = false 
 local welcomeShown = false 
+local lastClickTick = 0 
 
 -- ================= [ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ] =================
+-- Безопасная функция для u8
+local function safe_u8(str)
+    return u8(tostring(str or ""))
+end
+
+local function checkCooldown()
+    if os.clock() - lastClickTick < 0.5 then return false end
+    lastClickTick = os.clock()
+    return true
+end
+
 local function trim(s) 
     return s and tostring(s):match("^%s*(.-)%s*$") or "" 
 end
@@ -64,18 +76,9 @@ local function isMarked(val)
     return str == "true" or str == "1" or str == "да"
 end
 
-local function hasTwoDaysPassed(dateStr)
-    if not dateStr or dateStr == "" or dateStr == "nil" then return false end
-    local d, m, y = tostring(dateStr):match("(%d+)%.(%d+)%.(%d+)")
-    if not d or not m or not y then return false end
-    local status, targetTime = pcall(os.time, {day=tonumber(d), month=tonumber(m), year=tonumber(y), hour=0, min=0, sec=0})
-    if not status then return false end
-    return (os.time() - targetTime) >= 172800
-end
-
 local function GetNick()
-    local result, myid = pcall(sampGetPlayerIdByCharHandle, PLAYER_PED)
-    if result and myid and myid ~= -1 then
+    local res, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
+    if res and myid ~= -1 then
         local nick = sampGetPlayerNickname(myid)
         if nick then return nick:gsub("_", " ") end
     end
@@ -95,16 +98,14 @@ local function smartWait(ms)
 end
 
 local function showWelcomeMessage()
-    if welcomeShown then return end
     local scr = thisScript()
     sampAddChatMessage("{0633E5}" .. scr.name .. " {FFFFFF}v.{C8271E}" .. scr.version .. "{FFFFFF} authors {3645E2}" .. table.concat(scr.authors, ", ") .. "{FFFFFF} был успешно загружен!", 0x0633E5)
     sampAddChatMessage("{FFFFFF}Для активации/деактивации скрипта нажмите клавишу '{C8271E}F5{FFFFFF}'.", 0x0633E5)
     sampAddChatMessage("{FFFFFF}Меню взаимодействий - {C8271E}/ah{FFFFFF}, Меню лекций - {C8271E}/lectures{FFFFFF}, поставить на паузу клавиша '{C8271E}I{FFFFFF}'.", 0x0633E5)
     sampAddChatMessage("{FFFFFF}Обновить информацию вручную - {C8271E}/updc{FFFFFF}.", 0x0633E5)
-    welcomeShown = true
 end
 
--- ================= [ ИЗМЕНЕННОЕ МЕНЮ ] =================
+-- ================= [ МЕНЮ ] =================
 local function openAhMenu()
     local toggleText = showHUD and "{FF0000}Выключить HUD" or "{00FF00}Включить HUD"
     local s = toggleText .. "\n{FFFFFF}Обновить список кадетов\n" 
@@ -125,7 +126,7 @@ end
 -- ================= [ ОБРАБОТКА ОЧЕРЕДИ ] =================
 local function processQueue()
     if isRequesting then
-        if os.clock() - requestTimestamp > 20 then isRequesting = false end -- Увеличен таймаут
+        if os.clock() - requestTimestamp > 20 then isRequesting = false end
         return 
     end
     if #requestQueue == 0 then return end
@@ -300,10 +301,20 @@ end
 
 local function updateCadetInBase(name, col, joinDate, shouldSyncAfter, extraVal)
     if not name then return end
-    local url = GAS_URL .. "?action=update&name=" .. urlencode(name) .. "&instructor=" .. urlencode(GetNick())
-    if col then url = url .. "&col=" .. urlencode(col) end
-    if joinDate then url = url .. "&joinDate=" .. urlencode(joinDate) end
-    if extraVal then url = url .. "&val=" .. urlencode(u8(tostring(extraVal))) end
+    
+    -- Применяем безопасную u8 упаковку для всех параметров URL
+    local safeName = urlencode(safe_u8(name))
+    local safeInst = urlencode(safe_u8(GetNick()))
+    
+    local url = GAS_URL .. "?action=update&name=" .. safeName .. "&instructor=" .. safeInst
+    
+    if col then url = url .. "&col=" .. urlencode(safe_u8(col)) end
+    if joinDate then url = url .. "&joinDate=" .. urlencode(safe_u8(joinDate)) end
+    
+    -- Дополнительная проверка на наличие значения
+    if extraVal and tostring(extraVal) ~= "" then 
+        url = url .. "&val=" .. urlencode(safe_u8(extraVal)) 
+    end
     
     queueHttpRequest(url, function()
         if shouldSyncAfter then
@@ -349,10 +360,6 @@ function main()
     font = renderCreateFont("Arial", 8, 5)
     loadLecturesLocally()
     
-    if sampIsLocalPlayerSpawned() then
-        showWelcomeMessage()
-    end
-    
     lua_thread.create(function()
         checkScriptUpdate() 
         wait(4000)
@@ -361,6 +368,7 @@ function main()
 
     sampRegisterChatCommand("lectures", function()
         if not isScriptActive then return end
+        if not checkCooldown() then return end
         if #lectureKeys == 0 then loadLecturesLocally() end
         if #lectureKeys == 0 then
             sampAddChatMessage("{0633E5}[AH] {FF0000}Список лекций пуст!", -1)
@@ -373,11 +381,13 @@ function main()
 
     sampRegisterChatCommand("ah", function()
         if not isScriptActive then return end
+        if not checkCooldown() then return end
         openAhMenu()
     end)
     
     sampRegisterChatCommand("updc", function()
         if not isScriptActive then return end
+        if not checkCooldown() then return end
         syncAll(false)
     end)
 
@@ -385,13 +395,23 @@ function main()
         wait(0)
         processQueue()
         
+        if not welcomeShown and sampIsLocalPlayerSpawned() then
+            welcomeShown = true
+            lua_thread.create(function()
+                wait(1000) 
+                showWelcomeMessage()
+            end)
+        end
+        
         if wasKeyPressed(vkeys.VK_F5) and not sampIsChatInputActive() and not sampIsDialogActive() then
-            isScriptActive = not isScriptActive
-            if isScriptActive then
-                sampAddChatMessage("{0633E5}[AH] {00FF00}Скрипт активирован!", -1)
-                syncAll(true)
-            else
-                sampAddChatMessage("{0633E5}[AH] {FF0000}Скрипт выключен!", -1)
+            if checkCooldown() then
+                isScriptActive = not isScriptActive
+                if isScriptActive then
+                    sampAddChatMessage("{0633E5}[AH] {00FF00}Скрипт активирован!", -1)
+                    syncAll(true)
+                else
+                    sampAddChatMessage("{0633E5}[AH] {FF0000}Скрипт выключен!", -1)
+                end
             end
         end
         
@@ -448,27 +468,35 @@ function main()
                     local renderIndex = 1
                     for i, v in ipairs(cadetsOnline) do
                         if v and v.rawName then
-                            local l, t, p, dPassed = false, false, false, false
+                            local l, t, p, dPassed, raising = false, false, false, false, false
                             local safeName = trim(v.rawName)
                             local db = cadetsDB and cadetsDB[safeName] or nil
                             if db then
                                 l = isMarked(db.lecture)
                                 t = isMarked(db.theory)
                                 p = isMarked(db.practice)
-                                dPassed = hasTwoDaysPassed(db.date) or isMarked(db.isTwoDays)
+                                dPassed = isMarked(db.isTwoDays) 
+                                raising = isMarked(db.raising) 
                             end
                             local baseX, baseY = 28, 338 + (renderIndex * 14)
-                            local textBase = string.format("%d. %s [%s] ", renderIndex, v.displayName or "Unknown", v.id or "0")
-                            renderFontDrawText(font, textBase, baseX, baseY, 0xFFFFFFFF)
-                            
-                            local offset = renderGetFontDrawTextLength(font, textBase)
-                            renderFontDrawText(font, "[Л]", baseX + offset, baseY, l and 0xFF00FF00 or 0xFFFF4D4D)
-                            offset = offset + renderGetFontDrawTextLength(font, "[Л]")
-                            renderFontDrawText(font, "[Т]", baseX + offset, baseY, t and 0xFF00FF00 or 0xFFFF4D4D)
-                            offset = offset + renderGetFontDrawTextLength(font, "[Т]")
-                            renderFontDrawText(font, "[П]", baseX + offset, baseY, p and 0xFF00FF00 or 0xFFFF4D4D)
-                            offset = offset + renderGetFontDrawTextLength(font, "[П]")
-                            renderFontDrawText(font, "[Д]", baseX + offset, baseY, dPassed and 0xFF00FF00 or 0xFFFF4D4D)
+
+                            local isReady = (raising or dPassed) 
+
+                            if isReady then
+                                renderFontDrawText(font, string.format("%d. %s [%s]", renderIndex, v.displayName or "Unknown", v.id or "0"), baseX, baseY, 0xFF00FF00)
+                            else
+                                local textBase = string.format("%d. %s [%s] ", renderIndex, v.displayName or "Unknown", v.id or "0")
+                                renderFontDrawText(font, textBase, baseX, baseY, 0xFFFFFFFF)
+                                
+                                local offset = renderGetFontDrawTextLength(font, textBase)
+                                renderFontDrawText(font, "[Л]", baseX + offset, baseY, l and 0xFF00FF00 or 0xFFFF4D4D)
+                                offset = offset + renderGetFontDrawTextLength(font, "[Л]")
+                                renderFontDrawText(font, "[Т]", baseX + offset, baseY, t and 0xFF00FF00 or 0xFFFF4D4D)
+                                offset = offset + renderGetFontDrawTextLength(font, "[Т]")
+                                renderFontDrawText(font, "[П]", baseX + offset, baseY, p and 0xFF00FF00 or 0xFFFF4D4D)
+                                offset = offset + renderGetFontDrawTextLength(font, "[П]")
+                                renderFontDrawText(font, "[Д]", baseX + offset, baseY, dPassed and 0xFF00FF00 or 0xFFFF4D4D)
+                            end
                             
                             renderIndex = renderIndex + 1
                         end
@@ -483,20 +511,21 @@ end
 
 -- ================= [ ОБРАБОТКА ДИАЛОГОВ ] =================
 function sampev.onSendDialogResponse(id, btn, lst, inp)
+    if not checkCooldown() then return false end 
     if id == 9910 then
         if btn == 1 then
-            if lst == 0 then -- ВКЛ/ВЫКЛ HUD
+            if lst == 0 then 
                 showHUD = not showHUD
                 sampAddChatMessage(showHUD and "{0633E5}[AH] {00FF00}HUD включен" or "{0633E5}[AH] {FF0000}HUD выключен", -1)
-                lua_thread.create(function() wait(10); openAhMenu() end)
-            elseif lst == 1 then -- ОБНОВЛЕНИЕ СПИСКА
+                lua_thread.create(function() wait(50); openAhMenu() end)
+            elseif lst == 1 then 
                 syncAll(false)
-            else -- ВЫБОР КАДЕТА 
+            else 
                 if #cadetsOnline > 0 then
                     selectedCadet = cadetsOnline[lst - 1]
                     if selectedCadet and selectedCadet.displayName then
                         lua_thread.create(function()
-                            wait(10)
+                            wait(50)
                             sampShowDialog(9911, "{0633E5}" .. selectedCadet.displayName, "Лекция\nТеория\nПрактика\nОтчет\nКомментарий\n{A020F0}Информация\n{FF0000}Сброс прогресса", "ОК", "Назад", 2)
                         end)
                     end
@@ -514,35 +543,49 @@ function sampev.onSendDialogResponse(id, btn, lst, inp)
                 local l = (db and isMarked(db.lecture)) and "{00FF00}прошел" or "{FF0000}не прошел"
                 local t = (db and isMarked(db.theory)) and "{00FF00}прошел" or "{FF0000}не прошел"
                 local p = (db and isMarked(db.practice)) and "{00FF00}прошел" or "{FF0000}не прошел"
-                local d = (db and (hasTwoDaysPassed(db.date) or isMarked(db.isTwoDays))) and "{00FF00}прошло" or "{FF0000}не прошло"
+                local d = (db and isMarked(db.isTwoDays)) and "{00FF00}прошло" or "{FF0000}не прошло"
                 local rep = (db and db.report and db.report ~= "") and "{00FF00}залит" or "{FF0000}не залит"
                 local com = (db and db.comment and db.comment ~= "") and "{00FF00}добавлен" or "{FF0000}не добавлен"
                 local info_text = string.format("Лекция: %s\n{FFFFFF}Теория: %s\n{FFFFFF}Практика: %s\n{FFFFFF}Два дня: %s\n{FFFFFF}Отчет: %s\n{FFFFFF}Комментарий: %s", l, t, p, d, rep, com)
-                lua_thread.create(function() wait(10); sampShowDialog(9912, "{0633E5}Инфо: " .. (selectedCadet.displayName or ""), info_text, "Назад", "", 0) end)
+                lua_thread.create(function() wait(50); sampShowDialog(9912, "{0633E5}Инфо: " .. (selectedCadet.displayName or ""), info_text, "Назад", "", 0) end)
             elseif lst == 6 then
                 sampAddChatMessage("{0633E5}[AH] {FFFFFF}Запрос на сброс отправлен...", -1)
                 if cadetsDB and cadetsDB[safeName] then cadetsDB[safeName] = nil end
                 updateCadetInBase(selectedCadet.rawName, "reset", nil, true)
+                lua_thread.create(function()
+                    wait(100)
+                    if selectedCadet and selectedCadet.displayName then
+                        sampShowDialog(9911, "{0633E5}" .. selectedCadet.displayName, "Лекция\nТеория\nПрактика\nОтчет\nКомментарий\n{A020F0}Информация\n{FF0000}Сброс прогресса", "ОК", "Назад", 2)
+                    end
+                end)
             elseif lst == 3 then
-                lua_thread.create(function() wait(10); sampShowDialog(9914, "{0633E5}Отчет", "{FFFFFF}Введите ссылку на отчет:", "Отправить", "Отмена", 1) end)
+                lua_thread.create(function() wait(50); sampShowDialog(9914, "{0633E5}Отчет", "{FFFFFF}Введите ссылку на отчет:", "Отправить", "Отмена", 1) end)
             elseif lst == 4 then
-                lua_thread.create(function() wait(10); sampShowDialog(9915, "{0633E5}Комментарий", "{FFFFFF}Введите комментарий:", "Отправить", "Отмена", 1) end)
+                lua_thread.create(function() wait(50); sampShowDialog(9915, "{0633E5}Комментарий", "{FFFFFF}Введите комментарий:", "Отправить", "Отмена", 1) end)
             else
-                sampAddChatMessage("{0633E5}[AH] {FFFFFF}Запрос на обновление...", -1)
                 local columns = {"lecture", "theory", "practice"}
                 local colName = columns[lst + 1]
-                if not cadetsDB then cadetsDB = {} end
-                if not cadetsDB[safeName] then cadetsDB[safeName] = {} end
-                cadetsDB[safeName][colName] = "1"
-                updateCadetInBase(selectedCadet.rawName, colName, nil, true)
+                if colName then
+                    sampAddChatMessage("{0633E5}[AH] {FFFFFF}Запрос на обновление...", -1)
+                    if not cadetsDB then cadetsDB = {} end
+                    if not cadetsDB[safeName] then cadetsDB[safeName] = {} end
+                    cadetsDB[safeName][colName] = "1"
+                    updateCadetInBase(selectedCadet.rawName, colName, nil, true)
+                    lua_thread.create(function()
+                        wait(100)
+                        if selectedCadet and selectedCadet.displayName then
+                            sampShowDialog(9911, "{0633E5}" .. selectedCadet.displayName, "Лекция\nТеория\nПрактика\nОтчет\nКомментарий\n{A020F0}Информация\n{FF0000}Сброс прогресса", "ОК", "Назад", 2)
+                        end
+                    end)
+                end
             end
         else
-            lua_thread.create(function() wait(10); openAhMenu() end)
+            lua_thread.create(function() wait(50); openAhMenu() end)
         end
         return false
     elseif id == 9912 then
         lua_thread.create(function() 
-            wait(10)
+            wait(50)
             if selectedCadet and selectedCadet.displayName then
                 sampShowDialog(9911, "{0633E5}" .. selectedCadet.displayName, "Лекция\nТеория\nПрактика\nОтчет\nКомментарий\n{A020F0}Информация\n{FF0000}Сброс прогресса", "ОК", "Назад", 2) 
             end
@@ -575,7 +618,7 @@ function sampev.onSendDialogResponse(id, btn, lst, inp)
             updateCadetInBase(selectedCadet.rawName, "report", nil, true, inp)
         else
             lua_thread.create(function() 
-                wait(10)
+                wait(50)
                 if selectedCadet and selectedCadet.displayName then
                     sampShowDialog(9911, "{0633E5}" .. selectedCadet.displayName, "Лекция\nТеория\nПрактика\nОтчет\nКомментарий\n{A020F0}Информация\n{FF0000}Сброс прогресса", "ОК", "Назад", 2) 
                 end
@@ -592,7 +635,7 @@ function sampev.onSendDialogResponse(id, btn, lst, inp)
             updateCadetInBase(selectedCadet.rawName, "comment", nil, true, inp)
         else
             lua_thread.create(function() 
-                wait(10)
+                wait(50)
                 if selectedCadet and selectedCadet.displayName then
                     sampShowDialog(9911, "{0633E5}" .. selectedCadet.displayName, "Лекция\nТеория\nПрактика\nОтчет\nКомментарий\n{A020F0}Информация\n{FF0000}Сброс прогресса", "ОК", "Назад", 2) 
                 end
@@ -604,15 +647,8 @@ end
 
 function sampev.onServerMessage(clr, txt)
     if not txt then return end 
-    local cleanTxt = txt:gsub("{%x%x%x%x%x%x}", "") -- Фикс регулярки цветов
+    local cleanTxt = txt:gsub("{%x+}", "") 
     
-    if not welcomeShown and cleanTxt:find("Добро пожаловать на Evolve Role Play") then
-        lua_thread.create(function()
-            wait(500)
-            showWelcomeMessage()
-        end)
-    end
-
     if isUpdating then
         if cleanTxt:find("ID:") and (cleanTxt:find("Кадет") or cleanTxt:find("Cadet")) then
             local id, date_mem, nick = cleanTxt:match("ID:%s*(%d+)%s*|%s*%d+:%d+%s*([%d%.]+)%s*|%s*([%a%d_]+)")
@@ -621,6 +657,7 @@ function sampev.onServerMessage(clr, txt)
             end
             return false
         end
+        
         if cleanTxt:find("Всего%:") or cleanTxt:find("Всего в сети") or cleanTxt:find("Онлайн организации") then
             isUpdating = false
             cadetsOnline = tempCadets
@@ -641,6 +678,7 @@ function sampev.onServerMessage(clr, txt)
             
             return false
         end
+        
         return false 
     end
 end
