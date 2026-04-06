@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="header.png" alt="AcademyHelper Header" width="800">
+  <img src="header.jpg" alt="AcademyHelper Header" width="800">
 </p>
 
 # 👮 AcademyHelper `v0.9.9 (Beta)`
